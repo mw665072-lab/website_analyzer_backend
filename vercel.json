@@ -2,7 +2,7 @@
   "version": 2,
   "functions": {
     "src/server.ts": {
-      "maxDuration": 30000
+      "maxDuration": 900
     }
   },
   "builds": [
