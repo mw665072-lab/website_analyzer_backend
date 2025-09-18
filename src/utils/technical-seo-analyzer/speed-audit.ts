@@ -2,22 +2,46 @@ export class SpeedAuditor {
     async audit(url: string) {
         const runtimeImport = (specifier: string) => (Function('s', 'return import(s)') as any)(specifier);
 
+        console.log(`Starting Lighthouse audit for ${url}`);
+
         const [{ default: lighthouse }, chromeLauncher]: any = await Promise.all([
             runtimeImport('lighthouse'),
             runtimeImport('chrome-launcher'),
         ]);
 
+        const isVercel = process.env.VERCEL === '1';
+        
         const chrome = await chromeLauncher.launch({
-            chromeFlags: ['--headless=new', '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage'],
+            chromeFlags: [
+                '--headless=new',
+                '--disable-gpu',
+                '--no-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-setuid-sandbox',
+                '--no-first-run',
+                '--no-zygote',
+                ...(isVercel ? ['--single-process'] : []) // Single process only on Vercel
+            ],
         });
+
+        // Adjust timeouts based on environment
+        const maxWaitForLoad = isVercel ? 30000 : 45000;
+        const maxWaitForFcp = isVercel ? 30000 : 45000;
 
         const options = {
             logLevel: 'info',
             output: 'json',
             onlyCategories: ['performance'],
             port: chrome.port,
-            maxWaitForLoad: 45000,
-            maxWaitForFcp: 45000,
+            maxWaitForLoad,
+            maxWaitForFcp,
+            // Use mobile emulation for faster audit
+            formFactor: 'mobile',
+            throttling: {
+                rttMs: 150,
+                throughputKbps: 1638.4,
+                cpuSlowdownMultiplier: 4
+            }
         } as any;
 
         // Capture stdout/stderr emitted by Lighthouse so we can include LH:status messages in the result
@@ -49,8 +73,18 @@ export class SpeedAuditor {
         process.stdout.write = captureStdout as any;
         process.stderr.write = captureStderr as any;
 
+        const auditStart = Date.now();
         try {
+            console.log('Running Lighthouse audit...');
             const runnerResult = await lighthouse(url, options);
+            
+            if (!runnerResult || !runnerResult.lhr) {
+                throw new Error('Lighthouse audit failed - no results returned');
+            }
+
+            const auditDuration = Date.now() - auditStart;
+            console.log(`Lighthouse audit completed in ${auditDuration}ms`);
+
             const { audits, categories } = runnerResult.lhr;
 
             // Build a small summary of artifacts to avoid huge payloads while still providing useful data
@@ -76,26 +110,33 @@ export class SpeedAuditor {
             }
 
             return {
-                performanceScore: categories.performance.score,
-                firstContentfulPaint: audits['first-contentful-paint']?.displayValue,
-                largestContentfulPaint: audits['largest-contentful-paint']?.displayValue,
-                cumulativeLayoutShift: audits['cumulative-layout-shift']?.displayValue,
-                totalBlockingTime: audits['total-blocking-time']?.displayValue,
-                // full Lighthouse results for callers that want to inspect everything (can be large)
-                lhr: runnerResult.lhr,
+                performanceScore: categories.performance?.score || 0,
+                firstContentfulPaint: audits['first-contentful-paint']?.displayValue || 'N/A',
+                largestContentfulPaint: audits['largest-contentful-paint']?.displayValue || 'N/A',
+                cumulativeLayoutShift: audits['cumulative-layout-shift']?.displayValue || 'N/A',
+                totalBlockingTime: audits['total-blocking-time']?.displayValue || 'N/A',
+                auditDuration: `${auditDuration}ms`,
+                // Include essential LH data but remove large artifacts to keep payload reasonable
+                lhr: {
+                    ...runnerResult.lhr,
+                    artifacts: undefined // Remove to reduce payload size
+                },
                 // small artifact summary (lengths/counts) to keep payload reasonable
                 artifactsSummary,
-                // captured LH log output (includes LH:status lines)
-                logs: capturedOut + capturedErr,
+                // captured LH log output (includes LH:status lines) - truncate if too long
+                logs: (capturedOut + capturedErr).slice(-5000), // Keep last 5KB of logs
             };
         } catch (error) {
-            console.error('Lighthouse error:', error);
+            const auditDuration = Date.now() - auditStart;
+            console.error(`Lighthouse error after ${auditDuration}ms:`, error);
             return {
                 error: String(error),
-                logs: capturedOut + capturedErr,
+                auditDuration: `${auditDuration}ms`,
+                logs: (capturedOut + capturedErr).slice(-5000),
             };
         } finally {
             try {
+                console.log('Closing Chrome instance...');
                 if (chrome) {
                     if (typeof (chrome as any).kill === 'function') {
                         await (chrome as any).kill();
@@ -103,7 +144,9 @@ export class SpeedAuditor {
                         (chrome as any).process.kill();
                     }
                 }
+                console.log('Chrome instance closed');
             } catch (e) {
+                console.warn('Error closing Chrome:', e);
             }
             // restore stdout/stderr
             try {

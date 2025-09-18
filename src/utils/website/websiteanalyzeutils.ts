@@ -487,40 +487,108 @@ async function captureScreenshots(url: string): Promise<ScreenshotData> {
     const screenshotsDir = path.resolve(process.cwd(), 'screenshots');
     if (!fs.existsSync(screenshotsDir)) fs.mkdirSync(screenshotsDir, { recursive: true });
 
-    // Launch a headless browser and capture base64 screenshots
     let browser: Browser | null = null;
     try {
-        browser = await puppeteer.launch({ headless: true });
+        console.log(`Starting screenshot capture for ${url}`);
+        
+        // Use more conservative browser args for Vercel
+        const launchOptions = {
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--single-process', // Important for serverless
+                '--disable-gpu'
+            ]
+        };
+
+        browser = await puppeteer.launch(launchOptions);
         const page = await browser.newPage();
 
         // Validate URL has protocol
         let pageUrl = url;
-        try { new URL(pageUrl); } catch (e) { pageUrl = `https://${url}`; try { new URL(pageUrl); } catch (err) { console.error(`Invalid URL provided for screenshots: ${url}`); return { desktop: '', mobile: '' }; } }
+        try { 
+            new URL(pageUrl); 
+        } catch (e) { 
+            pageUrl = `https://${url}`; 
+            try { 
+                new URL(pageUrl); 
+            } catch (err) { 
+                console.error(`Invalid URL provided for screenshots: ${url}`);
+                return { desktop: '', mobile: '' }; 
+            } 
+        }
 
-        // increase navigation timeout and default timeouts to handle slower pages
-        page.setDefaultNavigationTimeout(30000);
-        page.setDefaultTimeout(30000);
+        // Set shorter timeouts for Vercel environment
+        const isVercel = process.env.VERCEL === '1';
+        const navTimeout = isVercel ? 25000 : 30000;
+        const defaultTimeout = isVercel ? 20000 : 30000;
+        
+        page.setDefaultNavigationTimeout(navTimeout);
+        page.setDefaultTimeout(defaultTimeout);
 
-        // Desktop
+        // Desktop screenshot
+        console.log('Capturing desktop screenshot');
         await page.setViewport({ width: 1280, height: 800 });
+        
         try {
-            await page.goto(pageUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+            await page.goto(pageUrl, { 
+                waitUntil: 'domcontentloaded', // Changed from networkidle2 for faster loading
+                timeout: navTimeout 
+            });
+            
+            // Wait a bit for CSS/images to load but don't wait too long
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
         } catch (navErr: any) {
-            console.warn(`Initial navigation failed: ${(navErr instanceof Error) ? navErr.message : String(navErr)}. Retrying with longer timeout and 'domcontentloaded'.`);
+            console.warn(`Desktop navigation failed: ${(navErr instanceof Error) ? navErr.message : String(navErr)}`);
             try {
-                await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                await page.goto(pageUrl, { 
+                    waitUntil: 'load', 
+                    timeout: navTimeout - 5000 
+                });
+                await new Promise(resolve => setTimeout(resolve, 1000));
             } catch (retryErr: any) {
-                console.error(`Navigation retry failed: ${(retryErr instanceof Error) ? retryErr.message : String(retryErr)}`);
+                console.error(`Desktop navigation retry failed: ${(retryErr instanceof Error) ? retryErr.message : String(retryErr)}`);
                 return { desktop: '', mobile: '' };
             }
         }
 
-        const desktopBase64 = await page.screenshot({ fullPage: true, encoding: 'base64' }) as string;
+        const desktopBase64 = await page.screenshot({ 
+            fullPage: false, // Don't capture full page to save time
+            encoding: 'base64',
+            type: 'png',
+            quality: 80 // Reduce quality to save time and space
+        }) as string;
 
-        // Mobile
+        console.log('Desktop screenshot captured, switching to mobile');
+
+        // Mobile screenshot
         await page.setViewport({ width: 375, height: 812 });
-        await page.reload({ waitUntil: 'networkidle2', timeout: 15000 });
-        const mobileBase64 = await page.screenshot({ fullPage: true, encoding: 'base64' }) as string;
+        
+        try {
+            await page.reload({ 
+                waitUntil: 'domcontentloaded', 
+                timeout: Math.floor(navTimeout * 0.7) // Less time for mobile
+            });
+            await new Promise(resolve => setTimeout(resolve, 1500)); // Shorter wait for mobile
+        } catch (mobileErr: any) {
+            console.warn(`Mobile reload failed: ${(mobileErr instanceof Error) ? mobileErr.message : String(mobileErr)}`);
+            // Try to take screenshot anyway
+        }
+
+        const mobileBase64 = await page.screenshot({ 
+            fullPage: false,
+            encoding: 'base64',
+            type: 'png',
+            quality: 80
+        }) as string;
+
+        console.log('Mobile screenshot captured');
 
         // Optionally save to disk when environment variable SAVE_SCREENSHOTS=true
         try {
@@ -535,11 +603,20 @@ async function captureScreenshots(url: string): Promise<ScreenshotData> {
             console.warn(`Failed to write screenshots to disk: ${(writeErr instanceof Error) ? writeErr.message : String(writeErr)}`);
         }
 
+        console.log('Screenshot capture completed successfully');
         return { desktop: desktopBase64, mobile: mobileBase64 };
+        
     } catch (error) {
         console.error(`Error capturing screenshots: ${(error instanceof Error) ? error.message : String(error)}`);
         return { desktop: '', mobile: '' };
     } finally {
-        if (browser) await browser.close();
+        if (browser) {
+            try {
+                await browser.close();
+                console.log('Browser closed successfully');
+            } catch (closeErr) {
+                console.warn('Failed to close browser properly:', closeErr);
+            }
+        }
     }
 }

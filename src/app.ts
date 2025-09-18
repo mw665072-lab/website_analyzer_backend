@@ -23,6 +23,9 @@ app.get('/', (req, res) => {
 
 // Import and use routes
 import analyzeRouter from './routes/analyze';
+import rankingRouter from './routes/ranking';
+
+app.use('/api', rankingRouter);
 app.use('/api', analyzeRouter);
 
 
