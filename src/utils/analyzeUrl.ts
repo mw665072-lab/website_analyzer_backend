@@ -12,75 +12,45 @@ type AnalyzeResult = {
  * - SEO analysis is awaited with a timeout; if it times out we continue and return partial result.
  */
 export async function analyzeUrl(url: string): Promise<AnalyzeResult> {
-    // Use environment-specific timeouts
-    const WEBSITE_ANALYSIS_TIMEOUT_MS = Number(process.env.WEBSITE_ANALYSIS_TIMEOUT_MS) || 240_000; // 4 minutes default
-    const SEO_ANALYSIS_TIMEOUT_MS = Number(process.env.SEO_ANALYSIS_TIMEOUT_MS) || 180_000; // 3 minutes default
-    
-    console.log(`Starting analysis for ${url} with timeouts: website=${WEBSITE_ANALYSIS_TIMEOUT_MS}ms, seo=${SEO_ANALYSIS_TIMEOUT_MS}ms`);
-
-    // Helper to wrap a promise with timeout and produce a structured result
-    const withTimeout = async <T>(p: Promise<T>, timeoutMs: number, name: string) => {
-        let timer: NodeJS.Timeout | undefined;
-        const timeoutStart = Date.now();
-        try {
-            const result = await Promise.race([
-                p,
-                new Promise<never>((_, reject) => {
-                    timer = setTimeout(() => reject(new Error(`${name} timeout after ${timeoutMs}ms`)), timeoutMs);
-                })
-            ]);
-            const duration = Date.now() - timeoutStart;
-            console.log(`${name} completed successfully in ${duration}ms`);
-            return { success: true, data: result } as const;
-        } catch (err: any) {
-            const duration = Date.now() - timeoutStart;
-            console.error(`${name} failed after ${duration}ms:`, err?.message);
-            return { success: false, error: err?.message ?? String(err) } as const;
-        } finally {
-            if (timer) clearTimeout(timer);
-        }
-    };
+    console.log(`Starting analysis for ${url}`);
 
     const websitePromise = analyzeWebsite(url);
     const seoAnalyzer = new SEOAnalysisOrchestrator(url);
     const seoPromise = seoAnalyzer.runFullAnalysis();
 
-    // Await both analyses with their respective timeouts
-    const [website, seo] = await Promise.all([
-        withTimeout(websitePromise, WEBSITE_ANALYSIS_TIMEOUT_MS, 'Website analysis'),
-        withTimeout(seoPromise, SEO_ANALYSIS_TIMEOUT_MS, 'SEO analysis')
-    ]);
+    // Await both analyses in parallel, allowing partial results if one fails
+    const [websiteSettled, seoSettled] = await Promise.allSettled([websitePromise, seoPromise]);
 
     const result: AnalyzeResult = {};
 
     // Handle website analysis result
-    if (website.success) {
-        result.website = website.data;
-        console.log('Website analysis data included in response');
+    if (websiteSettled.status === 'fulfilled') {
+        result.website = websiteSettled.value;
+        console.log('Website analysis completed successfully');
     } else {
-        console.error('Website analysis failed:', website.error);
+        console.error('Website analysis failed:', websiteSettled.reason?.message);
         // Return partial result with empty screenshots if website analysis failed
         result.website = {
             url,
             screenshots: { desktop: '', mobile: '' },
-            error: website.error,
+            error: websiteSettled.reason?.message ?? String(websiteSettled.reason),
             timestamp: new Date().toISOString()
         };
     }
 
     // Handle SEO analysis result
-    if (seo.success) {
+    if (seoSettled.status === 'fulfilled') {
         result.seo = {
             success: true,
             message: 'Technical SEO analysis completed',
-            data: seo.data,
+            data: seoSettled.value,
             timestamp: new Date().toISOString()
         };
     } else {
         result.seo = {
             success: false,
-            message: 'Technical SEO analysis failed or timed out',
-            error: seo.error,
+            message: 'Technical SEO analysis failed',
+            error: seoSettled.reason?.message ?? String(seoSettled.reason),
             data: undefined,
             timestamp: new Date().toISOString()
         };
