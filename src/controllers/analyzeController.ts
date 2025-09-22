@@ -3,6 +3,7 @@ import { analyzeUrl } from '../utils/analyzeUrl';
 import { ssrfCheck } from '../utils/ssrf';
 import { Request, Response } from 'express';
 import crypto from 'crypto';
+import { seoanalyzeUrl } from '../utils/seoAnalyze';
 
 type AnalyzeRequestBody = {
   url: string;
@@ -41,7 +42,6 @@ export const analyzeController = {
     res.setHeader('Cache-Control', 'no-store');
 
     const logMeta = { reportId, url: normalized };
-    console.info('analyze:start', logMeta);
 
     const timeoutPromise = new Promise((_, reject) => {
       const t = setTimeout(() => {
@@ -52,13 +52,17 @@ export const analyzeController = {
 
     try {
       const result = await Promise.race([analyzeUrl(normalized), timeoutPromise]);
+      const seoResults = await Promise.race([seoanalyzeUrl(normalized), timeoutPromise]);
+
+      console.log('SEO Results:', seoResults);
       const responsePayload = {
         reportId,
         options,
         status: 'completed',
         analyzedUrl: normalized,
         analysisTimestamp: new Date().toISOString(),
-        result
+        result,
+        seoResults
       };
 
       return res.status(200).json(responsePayload);

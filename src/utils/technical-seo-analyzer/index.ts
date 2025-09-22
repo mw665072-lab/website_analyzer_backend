@@ -91,14 +91,14 @@ export class SEOAnalysisOrchestrator {
         const startTime = Date.now();
 
         try {
-            console.log(chalk.blue("🌐 Crawling website structure..."));
+            // console.log(chalk.blue("🌐 Crawling website structure..."));
             const crawlStart = Date.now();
             const crawler = new TechnicalSEOAnalyzer(this.baseURL);
             this.results.crawl = await crawler.crawl();
             this.analysisStatus.crawl = "complete";
-            console.log(`✅ Crawling completed in ${Date.now() - crawlStart}ms`);
+            // console.log(`✅ Crawling completed in ${Date.now() - crawlStart}ms`);
 
-            console.log(chalk.blue("🔗 Checking for broken links and redirects..."));
+            // console.log(chalk.blue("🔗 Checking for broken links and redirects..."));
             const linkStart = Date.now();
 
             try {
@@ -115,15 +115,15 @@ export class SEOAnalysisOrchestrator {
                     })),
                 };
                 this.analysisStatus.brokenLinks = "complete";
-                console.log(`✅ Link checking completed in ${Date.now() - linkStart}ms - Found ${this.results.brokenLinks.broken.length} broken links and ${this.results.brokenLinks.redirects.length} redirects.`);
+                // console.log(`✅ Link checking completed in ${Date.now() - linkStart}ms - Found ${this.results.brokenLinks.broken.length} broken links and ${this.results.brokenLinks.redirects.length} redirects.`);
             } catch (linkError) {
-                console.warn(`⚠️ Link checking failed or timed out: ${linkError}`);
+                // console.warn(`⚠️ Link checking failed or timed out: ${linkError}`);
                 this.results.brokenLinks = { broken: [], redirects: [] };
                 const msg = (linkError && (linkError as any).message) || String(linkError);
                 this.analysisStatus.brokenLinks = /timeout|timed out/i.test(msg) ? "timed_out" : "failed";
             }
 
-            console.log(chalk.blue('⏱️  Analyzing page speed...'));
+            // console.log(chalk.blue('⏱️  Analyzing page speed...'));
             const speedStart = Date.now();
             try {
                 const speedAuditor = new SpeedAuditor();
@@ -140,7 +140,7 @@ export class SEOAnalysisOrchestrator {
                 ) {
                     this.results.speed = speedResult;
                     this.analysisStatus.speed = "complete";
-                    console.log(`✅ Page speed audit completed in ${Date.now() - speedStart}ms`);
+                    // console.log(`✅ Page speed audit completed in ${Date.now() - speedStart}ms`);
                 } else {
                     console.warn(`⚠️ Page speed audit returned an error or incomplete result: ${speedResult?.error || "Unknown error"}`);
                     this.results.speed = null;
@@ -153,17 +153,17 @@ export class SEOAnalysisOrchestrator {
                 this.results.speed = null;
             }
 
-            console.log(chalk.blue("⏱️  Skipping additional analyses to stay within timeout limits..."));
+            // console.log(chalk.blue("⏱️  Skipping additional analyses to stay within timeout limits..."));
 
             ["mobile", "validation", "schema", "architecture"].forEach((k) => {
                 (this.analysisStatus as any)[k] = "skipped";
             });
 
-            console.log(chalk.blue('📱 Checking mobile optimization...'));
+            // console.log(chalk.blue('📱 Checking mobile optimization...'));
             const mobileScanner = new MobileScanner();
             this.results.mobile = await mobileScanner.scan(this.baseURL);
 
-            console.log(chalk.blue('📋 Validating robots.txt and sitemap...'));
+            // console.log(chalk.blue('📋 Validating robots.txt and sitemap...'));
             try {
                 const validator = new RobotsSitemapValidator(this.baseURL);
                 const validationResult = await validator.validate();
@@ -187,7 +187,7 @@ export class SEOAnalysisOrchestrator {
                 schemas: schemaCheckResult.schemas.map((schema: any) => typeof schema === "string" ? schema : schema.type || schema.name || JSON.stringify(schema)),
             };
 
-            console.log(chalk.blue('🏗️  Analyzing site architecture...'));
+            // console.log(chalk.blue('🏗️  Analyzing site architecture...'));
             const visualizer = new SiteArchitectureVisualizer();
             this.results.architecture = visualizer.visualize(this.results.crawl) as unknown as ArchitectureResult;
 
@@ -259,7 +259,7 @@ export class SEOAnalysisOrchestrator {
             ]
         );
 
-        console.log(summaryTable.toString());
+        // console.log(summaryTable.toString());
 
         this.showDetailedFindings();
     }
@@ -277,20 +277,20 @@ export class SEOAnalysisOrchestrator {
             }
         }
 
-        if (this.results.speed) {
-            console.log(chalk.blue("\n⏱️  Page Speed Insights:"));
-            console.log(
-                `  Performance Score: ${Math.round(
-                    this.results.speed.performanceScore * 100
-                )}/100`
-            );
-            console.log(`  First Contentful Paint: ${this.results.speed.firstContentfulPaint}`);
-            console.log(`  Largest Contentful Paint: ${this.results.speed.largestContentfulPaint}`);
-            console.log(`  Cumulative Layout Shift: ${this.results.speed.cumulativeLayoutShift}`);
-        }
+        // if (this.results.speed) {
+        //     console.log(chalk.blue("\n⏱️  Page Speed Insights:"));
+        //     console.log(
+        //         `  Performance Score: ${Math.round(
+        //             this.results.speed.performanceScore * 100
+        //         )}/100`
+        //     );
+        //     console.log(`  First Contentful Paint: ${this.results.speed.firstContentfulPaint}`);
+        //     console.log(`  Largest Contentful Paint: ${this.results.speed.largestContentfulPaint}`);
+        //     console.log(`  Cumulative Layout Shift: ${this.results.speed.cumulativeLayoutShift}`);
+        // }
 
         if (this.results.mobile && !this.results.mobile.isMobileFriendly) {
-            console.log(chalk.yellow("\n📱 Mobile Optimization Issues:"));
+            // console.log(chalk.yellow("\n📱 Mobile Optimization Issues:"));
             if (!this.results.mobile.viewport) console.log("  ❌ Viewport meta tag missing");
             if (!this.results.mobile.touchIcons) console.log("  ❌ Touch icons missing");
             if (!this.results.mobile.appropriateFontSize) console.log("  ❌ Font size too small");
@@ -298,10 +298,10 @@ export class SEOAnalysisOrchestrator {
 
         if (this.results.validation) {
             if (!this.results.validation.robotsTxtExists) {
-                console.log(chalk.yellow("\n📋 Missing robots.txt file"));
+                // console.log(chalk.yellow("\n📋 Missing robots.txt file"));
             }
             if (this.results.validation.missingInSitemap.length > 0) {
-                console.log(chalk.yellow("\n📋 Pages missing from sitemap:"));
+                // console.log(chalk.yellow("\n📋 Pages missing from sitemap:"));
                 this.results.validation.missingInSitemap.slice(0, 3).forEach((page) => {
                     console.log(`  ${page}`);
                 });

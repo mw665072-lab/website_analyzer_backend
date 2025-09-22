@@ -24,19 +24,10 @@ app.get('/', (req, res) => {
 // Import and use routes
 import analyzeRouter from './routes/analyze';
 import rankingRouter from './routes/ranking';
+import redirectCheckerRouter from './routes/redirectChecker';
 
 app.use('/api', rankingRouter);
 app.use('/api', analyzeRouter);
-
-
-const MONGODB_URI = process.env.DB_HOST || 'mongodb://localhost:27017/analyzer';
-
-// mongoose.connect(MONGODB_URI)
-//   .then(() => console.log('MongoDB connected'))
-//   .catch(err => {
-//     console.error('MongoDB connection error:', err);
-//     process.exit(1);
-//   });
-
+app.use('/api', redirectCheckerRouter);
 
 export default app;

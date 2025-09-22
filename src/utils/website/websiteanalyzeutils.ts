@@ -193,8 +193,8 @@ function extractMetadata($: CheerioAPI): Metadata {
     const websiteName = $('meta[property="og:site_name"]').attr('content') || 'Not found';
     const websiteIcon = $('link[rel="icon"]').attr('href') || 'Not found';
 
-    console.log(`Website Name: ${websiteName}`);
-    console.log(`Website Icon: ${websiteIcon}`);
+    // console.log(`Website Name: ${websiteName}`);
+    // console.log(`Website Icon: ${websiteIcon}`);
 
     return {
         title,
@@ -532,7 +532,7 @@ async function captureScreenshots(url: string): Promise<ScreenshotData> {
         page.setDefaultTimeout(defaultTimeout);
 
         // Desktop screenshot
-        console.log('Capturing desktop screenshot');
+        // console.log('Capturing desktop screenshot');
         await page.setViewport({ width: 1280, height: 800 });
         
         try {
@@ -588,7 +588,7 @@ async function captureScreenshots(url: string): Promise<ScreenshotData> {
             quality: 80
         }) as string;
 
-        console.log('Mobile screenshot captured');
+        // console.log('Mobile screenshot captured');
 
         // Optionally save to disk when environment variable SAVE_SCREENSHOTS=true
         try {
@@ -597,13 +597,13 @@ async function captureScreenshots(url: string): Promise<ScreenshotData> {
                 const mobilePath = path.join(screenshotsDir, `mobile_${Date.now()}.png`);
                 fs.writeFileSync(desktopPath, desktopBase64, { encoding: 'base64' });
                 fs.writeFileSync(mobilePath, mobileBase64, { encoding: 'base64' });
-                console.log(`Screenshots saved: ${desktopPath}, ${mobilePath}`);
+                // console.log(`Screenshots saved: ${desktopPath}, ${mobilePath}`);
             }
         } catch (writeErr: any) {
             console.warn(`Failed to write screenshots to disk: ${(writeErr instanceof Error) ? writeErr.message : String(writeErr)}`);
         }
 
-        console.log('Screenshot capture completed successfully');
+        // console.log('Screenshot capture completed successfully');
         return { desktop: desktopBase64, mobile: mobileBase64 };
         
     } catch (error) {

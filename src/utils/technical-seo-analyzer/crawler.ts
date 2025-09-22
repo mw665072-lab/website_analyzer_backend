@@ -25,8 +25,8 @@ export class TechnicalSEOAnalyzer {
             try {
                 const crawler = new Crawler(this.baseURL);
 
-                crawler.interval = 1000;
-                crawler.maxConcurrency = 2;
+                crawler.interval = 10000;
+                crawler.maxConcurrency = 3;
                 crawler.respectRobotsTxt = true;
                 crawler.maxDepth = 2;
                 crawler.timeout = 5000;

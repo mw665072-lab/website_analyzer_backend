@@ -384,3 +384,175 @@ export interface AnalyzeResult {
         };
     };
 }
+// Enhanced types for the redirect checker
+
+export interface RedirectCheckRequest {
+  url: string;
+  options?: {
+    maxRedirects?: number;
+    timeout?: number;
+    followMetaRefresh?: boolean;
+    followJavaScriptRedirects?: boolean;
+    userAgent?: string;
+    headers?: Record<string, string>;
+    validateSSL?: boolean;
+  };
+}
+
+export interface RedirectResult {
+  url: string;
+  status?: number;
+  statusText?: string;
+  headers?: Record<string, string>;
+  html?: string;
+  error?: string;
+  responseTime?: number;
+  timestamp?: string;
+  redirectType?: 'http' | 'meta-refresh' | 'javascript';
+  security?: {
+    isSecure: boolean;
+    certificateValid?: boolean;
+    mixedContent?: boolean;
+  };
+}
+
+export interface PerformanceMetrics {
+  totalTime: number;
+  averageResponseTime: number;
+  slowestStep: number;
+  fastestStep: number;
+}
+
+export interface DomainChange {
+  from: string;
+  to: string;
+  step: number;
+}
+
+export interface StatusCodeInfo {
+  step: number;
+  status: number;
+  url: string;
+}
+
+export interface SecurityIssue {
+  type: 'mixed-content' | 'domain-change' | 'suspicious-redirect' | 'too-many-redirects' | 'ssl-error';
+  severity: 'low' | 'medium' | 'high';
+  description: string;
+  recommendation?: string;
+}
+
+export interface SEOIssue {
+    type: 'redirect-chain-too-long' | 'temporary-redirect-in-chain' | 'multiple-redirects' | 'redirect-loop';
+  severity: 'low' | 'medium' | 'high';
+  description: string;
+  impact: string;
+  recommendation?: string;
+}
+
+export interface EnhancedSummary {
+  totalRedirects: number;
+  finalUrl: string;
+  finalStatus: number | null;
+  hasRedirects: boolean;
+  redirectTypes: Array<'http' | 'meta-refresh' | 'javascript'>;
+  securityIssues: Array<'mixed-content' | 'domain-change' | 'suspicious-redirect' | 'too-many-redirects'>;
+    seoIssues: Array<'redirect-chain-too-long' | 'temporary-redirect-in-chain' | 'multiple-redirects' | 'redirect-loop'>;
+  domainChanges: DomainChange[];
+  statusCodes: StatusCodeInfo[];
+  performanceMetrics: PerformanceMetrics;
+    // Optional suggestion to flatten the redirect chain
+    canonicalRedirect?: { from: string; to: string };
+  processingTime: number;
+  checksPerformed: string[];
+  recommendations?: string[];
+  score?: {
+    overall: number;
+    security: number;
+    performance: number;
+    seo: number;
+  };
+}
+
+export interface RedirectCheckResponse {
+  reportId: string;
+  status: 'completed' | 'failed' | 'timeout';
+  analyzedUrl: string;
+  analysisTimestamp: string;
+  redirectChain: RedirectResult[];
+  summary: EnhancedSummary;
+  warnings?: string[];
+  errors?: string[];
+}
+
+export interface RateLimitResult {
+  allowed: boolean;
+  remaining?: number;
+  resetTime?: Date;
+  limit?: number;
+}
+
+export interface HealthCheckResponse {
+  status: 'healthy' | 'unhealthy' | 'degraded';
+  timestamp: string;
+  uptime: number;
+  version: string;
+  environment: string;
+  limits: {
+    maxRedirects: number;
+    timeoutMs: number;
+    rateLimitPerMinute: number;
+  };
+  dependencies?: {
+    name: string;
+    status: 'healthy' | 'unhealthy';
+    responseTime?: number;
+  }[];
+}
+
+export interface MetricsData {
+  requests: {
+    total: number;
+    successful: number;
+    failed: number;
+    rateLimited: number;
+  };
+  performance: {
+    averageResponseTime: number;
+    p95ResponseTime: number;
+    p99ResponseTime: number;
+  };
+  redirects: {
+    averageChainLength: number;
+    maxChainLength: number;
+    mostCommonTypes: Array<{ type: string; count: number }>;
+  };
+  errors: {
+    mostCommon: Array<{ error: string; count: number }>;
+  };
+  timestamp: string;
+}
+
+// Configuration interfaces
+export interface RedirectCheckerConfig {
+  maxRedirects: number;
+  timeout: number;
+  userAgent: string;
+  followMetaRefresh: boolean;
+  followJavaScriptRedirects: boolean;
+  validateSSL: boolean;
+  allowPrivateNetworks: boolean;
+}
+
+export interface SecurityConfig {
+  suspiciousDomains: string[];
+  blockedDomains: string[];
+  requireHTTPS: boolean;
+  maxDomainChanges: number;
+}
+
+export interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+}

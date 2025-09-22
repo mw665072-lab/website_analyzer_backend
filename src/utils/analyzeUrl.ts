@@ -3,7 +3,6 @@ import { SEOAnalysisOrchestrator } from './technical-seo-analyzer/index';
 
 type AnalyzeResult = {
     website?: any;
-    seo?: { success: boolean; message: string; data?: any; error?: string; timestamp: string };
 };
 
 /**
@@ -15,11 +14,9 @@ export async function analyzeUrl(url: string): Promise<AnalyzeResult> {
     console.log(`Starting analysis for ${url}`);
 
     const websitePromise = analyzeWebsite(url);
-    const seoAnalyzer = new SEOAnalysisOrchestrator(url);
-    const seoPromise = seoAnalyzer.runFullAnalysis();
 
     // Await both analyses in parallel, allowing partial results if one fails
-    const [websiteSettled, seoSettled] = await Promise.allSettled([websitePromise, seoPromise]);
+    const [websiteSettled] = await Promise.allSettled([websitePromise]);
 
     const result: AnalyzeResult = {};
 
@@ -34,24 +31,6 @@ export async function analyzeUrl(url: string): Promise<AnalyzeResult> {
             url,
             screenshots: { desktop: '', mobile: '' },
             error: websiteSettled.reason?.message ?? String(websiteSettled.reason),
-            timestamp: new Date().toISOString()
-        };
-    }
-
-    // Handle SEO analysis result
-    if (seoSettled.status === 'fulfilled') {
-        result.seo = {
-            success: true,
-            message: 'Technical SEO analysis completed',
-            data: seoSettled.value,
-            timestamp: new Date().toISOString()
-        };
-    } else {
-        result.seo = {
-            success: false,
-            message: 'Technical SEO analysis failed',
-            error: seoSettled.reason?.message ?? String(seoSettled.reason),
-            data: undefined,
             timestamp: new Date().toISOString()
         };
     }
