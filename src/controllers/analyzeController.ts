@@ -9,6 +9,7 @@ type AnalyzeRequestBody = {
   options?: Record<string, unknown>;
 };
 
+const DEFAULT_TIMEOUT_MS = Number(process.env.ANALYZE_TIMEOUT_MS) || 2800_000; // 4.67 minutes for Vercel Pro (5 min max)
 
 function makeErrorResponse(code: string, message: string, details?: unknown) {
   const payload: any = {
@@ -45,11 +46,11 @@ export const analyzeController = {
       const t = setTimeout(() => {
         clearTimeout(t);
         reject(new Error('Request timeout'));
-      }, 0);
+      }, DEFAULT_TIMEOUT_MS);
     });
 
     try {
-      const result = await Promise.race([analyzeUrl(normalized)]);
+      const result = await Promise.race([analyzeUrl(normalized), timeoutPromise]);
       const responsePayload = {
         reportId,
         options,

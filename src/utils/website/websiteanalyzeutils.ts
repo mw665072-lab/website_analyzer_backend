@@ -371,7 +371,7 @@ export async function analyzeWebsite(url: string): Promise<WebsiteAnalysis> {
 
         const response = await axios.get(pageUrl, {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-            timeout: 15000,
+            timeout: 1500000,
             validateStatus: (status) => status < 500
         });
         const loadTime = Date.now() - startTime;
