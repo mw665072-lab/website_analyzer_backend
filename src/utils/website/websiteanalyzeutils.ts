@@ -418,11 +418,6 @@ function extractMetadata($: CheerioAPI): Metadata {
     const title = $('head title').text() || $('meta[property="og:title"]').attr('content') || 'Not found';
     const description = $('meta[name="description"]').attr('content') || 'Not found';
     const keywords = $('meta[name="keywords"]').attr('content') || 'Not found';
-    const websiteName = $('meta[property="og:site_name"]').attr('content') || 'Not found';
-    const websiteIcon = $('link[rel="icon"]').attr('href') || 'Not found';
-
-    // console.log(`Website Name: ${websiteName}`);
-    // console.log(`Website Icon: ${websiteIcon}`);
 
     return {
         title,
@@ -718,7 +713,7 @@ async function captureScreenshots(url: string): Promise<ScreenshotData> {
     let browser: Browser | null = null;
     try {
         console.log(`Starting screenshot capture for ${url}`);
-        
+
         // Use more conservative browser args for Vercel
         const launchOptions = {
             headless: true,
@@ -739,45 +734,45 @@ async function captureScreenshots(url: string): Promise<ScreenshotData> {
 
         // Validate URL has protocol
         let pageUrl = url;
-        try { 
-            new URL(pageUrl); 
-        } catch (e) { 
-            pageUrl = `https://${url}`; 
-            try { 
-                new URL(pageUrl); 
-            } catch (err) { 
+        try {
+            new URL(pageUrl);
+        } catch (e) {
+            pageUrl = `https://${url}`;
+            try {
+                new URL(pageUrl);
+            } catch (err) {
                 console.error(`Invalid URL provided for screenshots: ${url}`);
-                return { desktop: '', mobile: '' }; 
-            } 
+                return { desktop: '', mobile: '' };
+            }
         }
 
         // Set shorter timeouts for Vercel environment
         const isVercel = process.env.VERCEL === '1';
-        const navTimeout = isVercel ? 25000 : 30000;
-        const defaultTimeout = isVercel ? 20000 : 30000;
-        
+        const navTimeout = isVercel ? 250000 : 300000;
+        const defaultTimeout = isVercel ? 200000 : 300000;
+
         page.setDefaultNavigationTimeout(navTimeout);
         page.setDefaultTimeout(defaultTimeout);
 
         // Desktop screenshot
         // console.log('Capturing desktop screenshot');
         await page.setViewport({ width: 1280, height: 800 });
-        
+
         try {
-            await page.goto(pageUrl, { 
+            await page.goto(pageUrl, {
                 waitUntil: 'domcontentloaded', // Changed from networkidle2 for faster loading
-                timeout: navTimeout 
+                timeout: navTimeout
             });
-            
+
             // Wait a bit for CSS/images to load but don't wait too long
             await new Promise(resolve => setTimeout(resolve, 2000));
-            
+
         } catch (navErr: any) {
             console.warn(`Desktop navigation failed: ${(navErr instanceof Error) ? navErr.message : String(navErr)}`);
             try {
-                await page.goto(pageUrl, { 
-                    waitUntil: 'load', 
-                    timeout: navTimeout - 5000 
+                await page.goto(pageUrl, {
+                    waitUntil: 'load',
+                    timeout: navTimeout - 5000
                 });
                 await new Promise(resolve => setTimeout(resolve, 1000));
             } catch (retryErr: any) {
@@ -786,7 +781,7 @@ async function captureScreenshots(url: string): Promise<ScreenshotData> {
             }
         }
 
-        const desktopBase64 = await page.screenshot({ 
+        const desktopBase64 = await page.screenshot({
             fullPage: false, // Don't capture full page to save time
             encoding: 'base64',
             type: 'png',
@@ -797,10 +792,10 @@ async function captureScreenshots(url: string): Promise<ScreenshotData> {
 
         // Mobile screenshot
         await page.setViewport({ width: 375, height: 812 });
-        
+
         try {
-            await page.reload({ 
-                waitUntil: 'domcontentloaded', 
+            await page.reload({
+                waitUntil: 'domcontentloaded',
                 timeout: Math.floor(navTimeout * 0.7) // Less time for mobile
             });
             await new Promise(resolve => setTimeout(resolve, 1500)); // Shorter wait for mobile
@@ -809,7 +804,7 @@ async function captureScreenshots(url: string): Promise<ScreenshotData> {
             // Try to take screenshot anyway
         }
 
-        const mobileBase64 = await page.screenshot({ 
+        const mobileBase64 = await page.screenshot({
             fullPage: false,
             encoding: 'base64',
             type: 'png',
@@ -833,7 +828,7 @@ async function captureScreenshots(url: string): Promise<ScreenshotData> {
 
         // console.log('Screenshot capture completed successfully');
         return { desktop: desktopBase64, mobile: mobileBase64 };
-        
+
     } catch (error) {
         console.error(`Error capturing screenshots: ${(error instanceof Error) ? error.message : String(error)}`);
         return { desktop: '', mobile: '' };
@@ -854,10 +849,10 @@ async function performSEOAnalysis($: CheerioAPI, pageUrl: string, htmlContent: s
     const title = $('title').text() || '';
     const description = $('meta[name="description"]').attr('content') || '';
     const keywords = $('meta[name="keywords"]').attr('content') || '';
-    
+
     // Extract text content for keyword analysis
     const bodyText = $('body').text().toLowerCase();
-    
+
     // Analyze title optimization
     const titleOptimization = {
         current: title,
@@ -866,7 +861,7 @@ async function performSEOAnalysis($: CheerioAPI, pageUrl: string, htmlContent: s
         suggestions: generateTitleSuggestions(title),
         issues: getTitleIssues(title)
     };
-    
+
     // Analyze meta description
     const descriptionOptimization = {
         current: description,
@@ -875,7 +870,7 @@ async function performSEOAnalysis($: CheerioAPI, pageUrl: string, htmlContent: s
         suggestions: generateDescriptionSuggestions(description),
         issues: getDescriptionIssues(description)
     };
-    
+
     // Keyword analysis
     const keywordsAnalysis = {
         current: keywords,
@@ -883,37 +878,37 @@ async function performSEOAnalysis($: CheerioAPI, pageUrl: string, htmlContent: s
         suggestions: generateKeywordSuggestions(bodyText),
         issues: getKeywordIssues(keywords)
     };
-    
+
     const metaTags: MetaTagsAnalysis = {
         titleOptimization,
         descriptionOptimization,
         keywordsAnalysis
     };
-    
+
     // Structured data analysis
     const structuredData = await analyzeStructuredData($);
-    
+
     // Canonical analysis
     const canonicalTag = analyzeCanonical($, pageUrl);
-    
+
     // Robots meta analysis
     const robotsMeta = analyzeRobotsMeta($);
-    
+
     // Social media analysis
     const socialMedia = analyzeSocialMedia($);
-    
+
     // Content quality analysis
     const contentQuality = analyzeContentQuality($, htmlContent);
-    
+
     // Internal linking analysis
     const internalLinking = analyzeInternalLinking($, pageUrl);
-    
+
     // Mobile optimization analysis
     const mobileOptimization = analyzeMobileOptimization($);
-    
+
     // Keyword optimization analysis
     const keywordOptimization = analyzeKeywordOptimization($, bodyText);
-    
+
     return {
         metaTags,
         structuredData,
@@ -943,7 +938,7 @@ async function performAccessibilityAnalysis($: CheerioAPI, pageUrl: string): Pro
 async function performSecurityAnalysis($: CheerioAPI, pageUrl: string, headers: any): Promise<SecurityAnalysis> {
     const url = new URL(pageUrl);
     const httpsStatus = url.protocol === 'https:';
-    
+
     return {
         httpsStatus,
         sslCertificate: await analyzeSSLCertificate(pageUrl),
@@ -1012,37 +1007,37 @@ function calculateKeywordDensity(text: string): number {
     const words = text.split(/\s+/);
     const totalWords = words.length;
     const keywordCount = new Map<string, number>();
-    
+
     words.forEach(word => {
         if (word.length > 3) {
             keywordCount.set(word, (keywordCount.get(word) || 0) + 1);
         }
     });
-    
+
     let maxDensity = 0;
     keywordCount.forEach(count => {
         const density = (count / totalWords) * 100;
         if (density > maxDensity) maxDensity = density;
     });
-    
+
     return maxDensity;
 }
 
 function generateKeywordSuggestions(text: string): string[] {
     const words = text.split(/\s+/);
     const keywordCount = new Map<string, number>();
-    
+
     words.forEach(word => {
         if (word.length > 3) {
             keywordCount.set(word.toLowerCase(), (keywordCount.get(word.toLowerCase()) || 0) + 1);
         }
     });
-    
+
     const sortedKeywords = Array.from(keywordCount.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
         .map(entry => entry[0]);
-        
+
     return sortedKeywords;
 }
 
@@ -1062,7 +1057,7 @@ function getKeywordIssues(keywords: string): string[] {
 async function analyzeStructuredData($: CheerioAPI): Promise<StructuredDataAnalysis> {
     const schemas: Array<{ type: string; valid: boolean; errors: string[] }> = [];
     let hasStructuredData = false;
-    
+
     // Check for JSON-LD structured data
     $('script[type="application/ld+json"]').each((_, element) => {
         hasStructuredData = true;
@@ -1082,7 +1077,7 @@ async function analyzeStructuredData($: CheerioAPI): Promise<StructuredDataAnaly
             });
         }
     });
-    
+
     // Check for microdata
     if ($('[itemscope]').length > 0) {
         hasStructuredData = true;
@@ -1092,12 +1087,12 @@ async function analyzeStructuredData($: CheerioAPI): Promise<StructuredDataAnaly
             errors: []
         });
     }
-    
+
     const recommendations = [];
     if (!hasStructuredData) {
         recommendations.push("Add structured data markup for better search visibility");
     }
-    
+
     return { hasStructuredData, schemas, recommendations };
 }
 
@@ -1105,19 +1100,19 @@ function analyzeCanonical($: CheerioAPI, pageUrl: string): CanonicalAnalysis {
     const canonicalElement = $('link[rel="canonical"]');
     const hasCanonical = canonicalElement.length > 0;
     const canonicalUrl = canonicalElement.attr('href') || '';
-    
+
     const issues = [];
     if (!hasCanonical) {
         issues.push("Missing canonical tag");
     } else if (!canonicalUrl) {
         issues.push("Canonical tag has no href");
     }
-    
+
     const selfReferencing = canonicalUrl === pageUrl;
     if (hasCanonical && !selfReferencing) {
         issues.push("Canonical URL does not match page URL");
     }
-    
+
     return { hasCanonical, canonicalUrl, issues, selfReferencing };
 }
 
@@ -1126,7 +1121,7 @@ function analyzeRobotsMeta($: CheerioAPI): RobotsMetaAnalysis {
     const hasRobotsMeta = robotsElement.length > 0;
     const content = robotsElement.attr('content') || '';
     const directives = content.split(',').map(d => d.trim());
-    
+
     const issues = [];
     if (directives.includes('noindex')) {
         issues.push("Page is set to noindex");
@@ -1134,41 +1129,41 @@ function analyzeRobotsMeta($: CheerioAPI): RobotsMetaAnalysis {
     if (directives.includes('nofollow')) {
         issues.push("Page is set to nofollow");
     }
-    
+
     return { hasRobotsMeta, content, directives, issues };
 }
 
 function analyzeSocialMedia($: CheerioAPI): SocialMediaAnalysis {
     const ogTags = ['og:title', 'og:description', 'og:image', 'og:url'];
     const twitterTags = ['twitter:card', 'twitter:title', 'twitter:description', 'twitter:image'];
-    
+
     const missingOg = ogTags.filter(tag => $(`meta[property="${tag}"]`).length === 0);
     const missingTwitter = twitterTags.filter(tag => $(`meta[name="${tag}"]`).length === 0);
-    
+
     const openGraph = {
         complete: missingOg.length === 0,
         missing: missingOg,
         issues: missingOg.map(tag => `Missing ${tag}`)
     };
-    
+
     const twitterCard = {
         complete: missingTwitter.length === 0,
         missing: missingTwitter,
         issues: missingTwitter.map(tag => `Missing ${tag}`)
     };
-    
+
     return { openGraph, twitterCard };
 }
 
 function analyzeContentQuality($: CheerioAPI, htmlContent: string): ContentQualityAnalysis {
     const bodyText = $('body').text();
     const wordCount = bodyText.split(/\s+/).filter(word => word.length > 0).length;
-    
+
     // Simple readability score (Flesch Reading Ease approximation)
     const sentences = bodyText.split(/[.!?]+/).length;
     const avgWordsPerSentence = wordCount / sentences;
     const readabilityScore = Math.max(0, Math.min(100, 206.835 - (1.015 * avgWordsPerSentence)));
-    
+
     const recommendations = [];
     if (wordCount < 300) {
         recommendations.push("Add more content for better SEO");
@@ -1176,7 +1171,7 @@ function analyzeContentQuality($: CheerioAPI, htmlContent: string): ContentQuali
     if (readabilityScore < 60) {
         recommendations.push("Improve content readability");
     }
-    
+
     return {
         wordCount,
         readabilityScore,
@@ -1192,7 +1187,7 @@ function analyzeInternalLinking($: CheerioAPI, pageUrl: string): InternalLinking
     let internalLinksCount = 0;
     let externalLinksCount = 0;
     let brokenLinksCount = 0; // Would need actual testing
-    
+
     $('a[href]').each((_, element) => {
         const href = $(element).attr('href') || '';
         if (href.startsWith(baseUrl) || href.startsWith('/')) {
@@ -1201,12 +1196,12 @@ function analyzeInternalLinking($: CheerioAPI, pageUrl: string): InternalLinking
             externalLinksCount++;
         }
     });
-    
+
     const recommendations = [];
     if (internalLinksCount < 3) {
         recommendations.push("Add more internal links for better navigation");
     }
-    
+
     return {
         internalLinksCount,
         externalLinksCount,
@@ -1219,20 +1214,20 @@ function analyzeInternalLinking($: CheerioAPI, pageUrl: string): InternalLinking
 function analyzeMobileOptimization($: CheerioAPI): MobileOptimizationAnalysis {
     const viewportMeta = $('meta[name="viewport"]');
     const viewportConfigured = viewportMeta.length > 0;
-    
+
     const touchElements = $('button, input, a, [onclick]').length;
     const textReadability = true; // Simplified check
-    
+
     let mobileScore = 0;
     if (viewportConfigured) mobileScore += 30;
     if (touchElements > 5) mobileScore += 20;
     if (textReadability) mobileScore += 25;
-    
+
     const issues = [];
     if (!viewportConfigured) {
         issues.push("Missing viewport meta tag");
     }
-    
+
     return { viewportConfigured, touchElements, textReadability, mobileScore, issues };
 }
 
@@ -1240,14 +1235,14 @@ function analyzeKeywordOptimization($: CheerioAPI, bodyText: string): KeywordOpt
     const words = bodyText.split(/\s+/);
     const totalWords = words.length;
     const keywordCount = new Map<string, number>();
-    
+
     words.forEach(word => {
         if (word.length > 3) {
             const cleanWord = word.toLowerCase().replace(/[^a-z0-9]/g, '');
             keywordCount.set(cleanWord, (keywordCount.get(cleanWord) || 0) + 1);
         }
     });
-    
+
     const primaryKeywords = Array.from(keywordCount.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10)
@@ -1256,9 +1251,9 @@ function analyzeKeywordOptimization($: CheerioAPI, bodyText: string): KeywordOpt
             density: (count / totalWords) * 100,
             positions: ['title', 'body'] // Simplified
         }));
-    
+
     const keywordStuffing = primaryKeywords.some(kw => kw.density > 3);
-    
+
     return {
         primaryKeywords,
         keywordStuffing,
@@ -1271,7 +1266,7 @@ function analyzeKeywordOptimization($: CheerioAPI, bodyText: string): KeywordOpt
 function analyzeContrastRatio($: CheerioAPI): ContrastRatioAnalysis {
     // Simplified contrast analysis - would need actual color computation
     const elementsWithColor = $('[style*="color"], [style*="background"]').length;
-    
+
     return {
         averageContrastRatio: 4.5, // Simplified
         failingElements: Math.floor(elementsWithColor * 0.1), // Estimate 10% failing
@@ -1284,7 +1279,7 @@ function analyzeAltAttributes($: CheerioAPI): AltAttributeAnalysis {
     const totalImages = $('img').length;
     const imagesWithAlt = $('img[alt]').length;
     const imagesWithoutAlt = totalImages - imagesWithAlt;
-    
+
     return {
         imagesWithAlt,
         imagesWithoutAlt,
@@ -1297,7 +1292,7 @@ function analyzeAriaLabels($: CheerioAPI): AriaLabelAnalysis {
     const elementsWithAria = $('[aria-label], [aria-labelledby], [aria-describedby]').length;
     const interactiveElements = $('button, input, select, textarea, a').length;
     const missingAriaLabels = Math.max(0, interactiveElements - elementsWithAria);
-    
+
     return {
         elementsWithAria,
         missingAriaLabels,
@@ -1310,11 +1305,11 @@ function analyzeHeadingStructure($: CheerioAPI): HeadingStructureAnalysis {
     const headings = $('h1, h2, h3, h4, h5, h6');
     const h1Count = $('h1').length;
     const multipleH1 = h1Count > 1;
-    
+
     let properHierarchy = true;
     let previousLevel = 0;
     const missingLevels: number[] = [];
-    
+
     headings.each((_, element) => {
         const level = parseInt(element.tagName.charAt(1));
         if (level > previousLevel + 1) {
@@ -1327,11 +1322,11 @@ function analyzeHeadingStructure($: CheerioAPI): HeadingStructureAnalysis {
         }
         previousLevel = level;
     });
-    
+
     const recommendations = [];
     if (multipleH1) recommendations.push("Use only one H1 per page");
     if (!properHierarchy) recommendations.push("Fix heading hierarchy");
-    
+
     return { properHierarchy, missingLevels, multipleH1, recommendations };
 }
 
@@ -1339,7 +1334,7 @@ function analyzeFocusManagement($: CheerioAPI): FocusAnalysis {
     const focusableElements = $('a, button, input, select, textarea, [tabindex]').length;
     const skipLinks = $('a[href^="#"]').length > 0;
     const tabOrder = $('[tabindex]').length > 0;
-    
+
     return {
         focusableElements,
         tabOrder,
@@ -1399,17 +1394,17 @@ function analyzeSecurityHeaders(headers: any): SecurityHeadersAnalysis {
         xContentTypeOptions: !!headers['x-content-type-options'],
         referrerPolicy: !!headers['referrer-policy']
     };
-    
+
     let score = 0;
     Object.values(securityHeaders).forEach(present => {
         if (present) score += 20;
     });
-    
+
     const recommendations = [];
     if (!securityHeaders.contentSecurityPolicy) recommendations.push("Add Content Security Policy header");
     if (!securityHeaders.strictTransportSecurity) recommendations.push("Add HSTS header");
     if (!securityHeaders.xFrameOptions) recommendations.push("Add X-Frame-Options header");
-    
+
     return { ...securityHeaders, score, recommendations };
 }
 
@@ -1421,9 +1416,9 @@ function analyzeMixedContent($: CheerioAPI, isHttps: boolean): MixedContentAnaly
             recommendations: ["Enable HTTPS first"]
         };
     }
-    
+
     const mixedContentItems: Array<{ type: string; url: string; risk: string }> = [];
-    
+
     // Check for HTTP resources on HTTPS page
     $('img[src^="http:"], script[src^="http:"], link[href^="http:"]').each((_, element) => {
         const src = $(element).attr('src') || $(element).attr('href') || '';
@@ -1433,7 +1428,7 @@ function analyzeMixedContent($: CheerioAPI, isHttps: boolean): MixedContentAnaly
             risk: "medium"
         });
     });
-    
+
     return {
         hasMixedContent: mixedContentItems.length > 0,
         mixedContentItems,
@@ -1443,7 +1438,7 @@ function analyzeMixedContent($: CheerioAPI, isHttps: boolean): MixedContentAnaly
 
 function analyzeVulnerabilities($: CheerioAPI): VulnerabilityAnalysis {
     const vulnerabilities: Array<{ type: string; severity: string; description: string }> = [];
-    
+
     // Check for common vulnerability indicators
     if ($('script[src*="jquery"]').length > 0) {
         vulnerabilities.push({
@@ -1452,9 +1447,9 @@ function analyzeVulnerabilities($: CheerioAPI): VulnerabilityAnalysis {
             description: "Consider updating jQuery to latest version"
         });
     }
-    
+
     let riskScore = vulnerabilities.length * 2;
-    
+
     return {
         knownVulnerabilities: vulnerabilities,
         riskScore: Math.min(10, riskScore),
