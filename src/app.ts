@@ -26,9 +26,11 @@ import analyzeRouter from './routes/analyze';
 import rankingRouter from './routes/ranking';
 import seoAnalyzer from './routes/seoAnalyzer';
 import redirectCheckerRouter from './routes/redirectChecker';
+import aiAnalyzerRouter from './routes/aiAnalyzer';
 
 app.use('/api', rankingRouter);
 app.use('/api', analyzeRouter);
 app.use('/api', redirectCheckerRouter);
 app.use('/api', seoAnalyzer);
+app.use('/api', aiAnalyzerRouter);
 export default app;

@@ -24,6 +24,7 @@ export interface WebsiteAnalysis {
     accessibility: AccessibilityAnalysis;
     security: SecurityAnalysis;
     coreWebVitals: CoreWebVitals;
+    cssVariables?: CSSVariableInfo;
 }
 
 export interface SEOAnalysis {
@@ -311,6 +312,19 @@ export interface CSSStats {
     elementSelectors: number;
 }
 
+export interface CSSVariableUsage {
+    property: string;
+    selector?: string;
+    rawValue: string;
+    resolvedValue?: string;
+}
+
+export interface CSSVariableInfo {
+    variables: Record<string, string>; // --name: value
+    usages: CSSVariableUsage[];
+    unresolved: string[]; // variable names that could not be resolved
+}
+
 export interface ExternalStylesheet {
     url: string;
     size: string;
@@ -340,6 +354,8 @@ export interface ScreenshotData {
     mobile: string;  // Base64 encoded screenshot
 }
 
+// Include CSS variable data in overall analysis
+
 // Main analysis function
 export async function analyzeWebsite(url: string): Promise<WebsiteAnalysis> {
     const startTime = Date.now();
@@ -362,10 +378,14 @@ export async function analyzeWebsite(url: string): Promise<WebsiteAnalysis> {
         const $ = cheerio.load(response.data, { xmlMode: true, decodeEntities: false, recognizeCDATA: true });
         const pageHostname = new URL(pageUrl).hostname;
         const externalStylesheets = await extractExternalStylesheets($, pageUrl);
+
+        // Extract CSS custom properties (variables) first so we can resolve var(...) usages elsewhere
+        const cssVariables = extractCSSVariables($, externalStylesheets);
+
         const [metadata, fonts, colors, spacing, dimensions, mediaQueries, cssStats, structure, screenshots, seoAnalysis, accessibility, security, coreWebVitals] = await Promise.all([
             extractMetadata($),
             extractFonts($, externalStylesheets),
-            extractColors($, externalStylesheets),
+            extractColors($, externalStylesheets, cssVariables),
             extractSpacing($, externalStylesheets),
             extractDimensions($, externalStylesheets),
             extractMediaQueries($, externalStylesheets),
@@ -388,6 +408,7 @@ export async function analyzeWebsite(url: string): Promise<WebsiteAnalysis> {
             mediaQueries,
             cssStats,
             externalStylesheets,
+            cssVariables,
             structure,
             screenshots,
             seoAnalysis,
@@ -528,11 +549,11 @@ function extractFontsWithRegex(cssText: string, fonts: FontInfo): void {
 }
 
 // Color extraction
-function extractColors($: CheerioAPI, externalStylesheets?: ExternalStylesheet[]): ColorInfo {
+function extractColors($: CheerioAPI, externalStylesheets?: ExternalStylesheet[], cssVariables?: CSSVariableInfo): ColorInfo {
     const colors: ColorInfo = { text: [], background: [], border: [], other: [] };
     $('[style]').each((i, el) => { const style = $(el).attr('style'); if (style) extractColorProperties(style, colors); });
-    $('style').each((i, el) => { const cssText = $(el).html(); if (cssText) extractColorsFromCSS(cssText, colors); });
-    if (externalStylesheets && externalStylesheets.length) externalStylesheets.forEach(s => { if (s.content) extractColorsFromCSS(s.content, colors); });
+    $('style').each((i, el) => { const cssText = $(el).html(); if (cssText) extractColorsFromCSS(cssText, colors, cssVariables); });
+    if (externalStylesheets && externalStylesheets.length) externalStylesheets.forEach(s => { if (s.content) extractColorsFromCSS(s.content, colors, cssVariables); });
     return colors;
 }
 
@@ -541,24 +562,61 @@ function extractColorProperties(style: string, colors: ColorInfo): void {
     colorProps.forEach(({ prop, category }) => { const regex = new RegExp(`${prop}\\s*:\\s*([^;]+)`, 'i'); const match = style.match(regex); if (match) { const color = match[1].trim(); if (!colors[category as keyof ColorInfo].includes(color)) colors[category as keyof ColorInfo].push(color); } });
 }
 
-function extractColorsFromCSS(cssText: string, colors: ColorInfo): void {
+// (replaced by a version that can resolve CSS variables)
+
+// New: extractColorsFromCSS that can resolve CSS variables using cssVariables map
+function extractColorsFromCSS(cssText: string, colors: ColorInfo, cssVariables?: CSSVariableInfo): void {
     try {
         const ast = parse(cssText);
         if (!ast.stylesheet || !ast.stylesheet.rules) return;
-        ast.stylesheet.rules.forEach(rule => { if (rule.type === 'rule' && rule.declarations) { rule.declarations.forEach((decl: any) => { if (decl.type === 'declaration' && decl.property && decl.property.includes('color') && decl.value) { let category: keyof ColorInfo = 'other'; if (decl.property === 'color') category = 'text'; else if (decl.property.includes('background')) category = 'background'; else if (decl.property.includes('border')) category = 'border'; if (!colors[category].includes(decl.value)) colors[category].push(decl.value); } }); } });
+        ast.stylesheet.rules.forEach(rule => {
+            if (rule.type === 'rule' && (rule as any).declarations) {
+                (rule as any).declarations.forEach((decl: any) => {
+                    if (decl.type === 'declaration' && decl.property && decl.property.includes('color') && decl.value) {
+                        let value = decl.value as string;
+                        // Resolve var(--foo, fallback) patterns
+                        value = resolveCSSVariablesInValue(value, cssVariables);
+                        let category: keyof ColorInfo = 'other';
+                        if (decl.property === 'color') category = 'text';
+                        else if (decl.property.includes('background')) category = 'background';
+                        else if (decl.property.includes('border')) category = 'border';
+                        if (!colors[category].includes(value)) colors[category].push(value);
+                    }
+                });
+            }
+        });
     } catch (e) {
-        extractColorsWithRegex(cssText, colors);
+        extractColorsWithRegex(cssText, colors, cssVariables);
     }
 }
 
+// Resolve var(--name, fallback) and var(--name) using cssVariables map when available
+function resolveCSSVariablesInValue(value: string, cssVariables?: CSSVariableInfo): string {
+    if (!value || !value.includes('var(') || !cssVariables) return value;
+    return value.replace(/var\((--[a-zA-Z0-9-_]+)(?:\s*,\s*([^\)]+))?\)/g, function (match: string, varName: string, fallback: string) {
+        const key = varName.trim();
+        if (cssVariables.variables && key in cssVariables.variables) {
+            return cssVariables.variables[key];
+        }
+        if (fallback) return fallback.trim();
+        if (cssVariables.unresolved && !cssVariables.unresolved.includes(key)) cssVariables.unresolved.push(key);
+        return match; // keep original var(...) text if unresolved
+    });
+}
+
+function matchFallbackPlaceholder(varName: string) {
+    // placeholder for unresolved variable - keep the var() text so it's clear
+    return `var(${varName})`;
+}
+
 // Fallback regex-based color extraction
-function extractColorsWithRegex(cssText: string, colors: ColorInfo): void {
+function extractColorsWithRegex(cssText: string, colors: ColorInfo, cssVariables?: CSSVariableInfo): void {
     const colorMatches = cssText.match(/color\s*:\s*([^;}]+)/gi) || [];
-    colorMatches.forEach(m => { const v = m.split(':')[1]?.trim(); if (v && !colors.text.includes(v)) colors.text.push(v); });
+    colorMatches.forEach(m => { const v = m.split(':')[1]?.trim(); const resolved = resolveCSSVariablesInValue(v || '', cssVariables); if (resolved && !colors.text.includes(resolved)) colors.text.push(resolved); });
     const bgMatches = cssText.match(/background-color\s*:\s*([^;}]+)/gi) || [];
-    bgMatches.forEach(m => { const v = m.split(':')[1]?.trim(); if (v && !colors.background.includes(v)) colors.background.push(v); });
+    bgMatches.forEach(m => { const v = m.split(':')[1]?.trim(); const resolved = resolveCSSVariablesInValue(v || '', cssVariables); if (resolved && !colors.background.includes(resolved)) colors.background.push(resolved); });
     const borderMatches = cssText.match(/border-color\s*:\s*([^;}]+)/gi) || [];
-    borderMatches.forEach(m => { const v = m.split(':')[1]?.trim(); if (v && !colors.border.includes(v)) colors.border.push(v); });
+    borderMatches.forEach(m => { const v = m.split(':')[1]?.trim(); const resolved = resolveCSSVariablesInValue(v || '', cssVariables); if (resolved && !colors.border.includes(resolved)) colors.border.push(resolved); });
 }
 
 // Spacing extraction
@@ -747,9 +805,8 @@ async function captureScreenshots(url: string): Promise<ScreenshotData> {
         }
 
         // Set shorter timeouts for Vercel environment
-        const isVercel = process.env.VERCEL === '1';
-        const navTimeout = isVercel ? 250000 : 300000;
-        const defaultTimeout = isVercel ? 200000 : 300000;
+        const navTimeout = 2000000; // 20 seconds for navigation
+        const defaultTimeout = 3000000; // 30 seconds for other operations
 
         page.setDefaultNavigationTimeout(navTimeout);
         page.setDefaultTimeout(defaultTimeout);
@@ -1455,4 +1512,67 @@ function analyzeVulnerabilities($: CheerioAPI): VulnerabilityAnalysis {
         riskScore: Math.min(10, riskScore),
         recommendations: vulnerabilities.map(v => `Fix: ${v.description}`)
     };
+}
+
+// Extract CSS custom properties (variables) from inline styles, style tags and external stylesheets
+function extractCSSVariables($: CheerioAPI, externalStylesheets?: ExternalStylesheet[]): CSSVariableInfo {
+    const info: CSSVariableInfo = { variables: {}, usages: [], unresolved: [] };
+
+    // Inline styles - look for --var: value declarations
+    $('[style]').each((_, el) => {
+        const style = $(el).attr('style') || '';
+        const inlineVars = parseVariablesFromCSSText(style);
+        Object.keys(inlineVars).forEach(k => { info.variables[k] = inlineVars[k]; });
+        // Also check for usages var(--...)
+        const usages = parseVariableUsagesFromText(style);
+        usages.forEach(u => info.usages.push({ property: 'inline', rawValue: u, resolvedValue: resolveCSSVariablesInValue(u, info) }));
+    });
+
+    // <style> tags
+    $('style').each((_, el) => {
+        const cssText = $(el).html() || '';
+        const vars = parseVariablesFromCSSText(cssText);
+        Object.keys(vars).forEach(k => { info.variables[k] = vars[k]; });
+        const usages = parseVariableUsagesFromText(cssText);
+        usages.forEach(u => info.usages.push({ property: 'style', rawValue: u, resolvedValue: resolveCSSVariablesInValue(u, info) }));
+    });
+
+    // External stylesheets
+    if (externalStylesheets && externalStylesheets.length) {
+        externalStylesheets.forEach(s => {
+            if (!s.content) return;
+            const vars = parseVariablesFromCSSText(s.content);
+            Object.keys(vars).forEach(k => { info.variables[k] = vars[k]; });
+            const usages = parseVariableUsagesFromText(s.content);
+            usages.forEach(u => info.usages.push({ property: s.url, rawValue: u, resolvedValue: resolveCSSVariablesInValue(u, info) }));
+        });
+    }
+
+    return info;
+}
+
+// Parse declarations of --var: value; from a block of CSS or inline style
+function parseVariablesFromCSSText(cssText: string): Record<string, string> {
+    const vars: Record<string, string> = {};
+    // match --name: value; including cases without trailing semicolon
+    const regex = /(--[a-zA-Z0-9-_]+)\s*:\s*([^;\}]+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = regex.exec(cssText)) !== null) {
+        const name = m[1].trim();
+        const value = m[2].trim();
+        vars[name] = value;
+    }
+    return vars;
+
+}
+
+// Find usages like var(--name) or var(--name, fallback)
+function parseVariableUsagesFromText(text: string): string[] {
+    const usages: string[] = [];
+    const regex = /var\((--[a-zA-Z0-9-_]+(?:\s*,\s*[^\)]+)?)\)/g;
+    let m: RegExpExecArray | null;
+    while ((m = regex.exec(text)) !== null) {
+        usages.push(`var(${m[1]})`);
+    }
+    return usages;
 }
