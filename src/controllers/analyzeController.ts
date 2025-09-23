@@ -49,7 +49,7 @@ export const analyzeController = {
     });
 
     try {
-      const result = await Promise.race([analyzeUrl(normalized), timeoutPromise]);
+      const result = await Promise.race([analyzeUrl(normalized)]);
       const responsePayload = {
         reportId,
         options,
