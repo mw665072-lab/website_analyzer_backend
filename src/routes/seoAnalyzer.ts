@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { redirectCheckerController } from '../controllers/redirectCheckerController';
+import { seoWebsiteAnalyzerController } from '../controllers/seoWebsiteAnalyzer';
 
 const router = Router();
 
-router.post('/seoWebsiteAnalyzer', redirectCheckerController.handleRedirectCheck);
+router.post('/seoWebsiteAnalyzer', seoWebsiteAnalyzerController.seoHandleAnalyze);
 
 export default router;

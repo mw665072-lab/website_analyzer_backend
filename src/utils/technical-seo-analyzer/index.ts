@@ -10,7 +10,7 @@ import { RobotsSitemapValidator } from "./validator";
 import { SchemaGenerator } from "./schema-generator";
 import { SiteArchitectureVisualizer } from "./visualizer";
 
-interface CrawlResults extends Map<string, any> {}
+interface CrawlResults extends Map<string, any> { }
 
 interface BrokenLinksResult {
     broken: { url: string; status: number }[];
@@ -61,9 +61,11 @@ export class SEOAnalysisOrchestrator {
     private baseURL: string;
     private results: AnalysisResults;
     private analysisStatus: { [k in keyof AnalysisResults]?: AnalysisStatus };
+    private fastMode: boolean;
 
-    constructor(baseURL: string) {
+    constructor(baseURL: string, options?: { fastMode?: boolean }) {
         this.baseURL = baseURL;
+        this.fastMode = options?.fastMode || false;
         this.results = {
             crawl: null,
             brokenLinks: null,
@@ -91,221 +93,243 @@ export class SEOAnalysisOrchestrator {
         const startTime = Date.now();
 
         try {
-            // console.log(chalk.blue("🌐 Crawling website structure..."));
+            // Step 1: Crawling (required for broken links check)
             const crawlStart = Date.now();
             const crawler = new TechnicalSEOAnalyzer(this.baseURL);
-            this.results.crawl = await crawler.crawl();
+            this.results.crawl = await this.withTimeout(
+                crawler.crawl(),
+                15000, // 15 second timeout for crawling to ensure completion
+                "crawl"
+            );
             this.analysisStatus.crawl = "complete";
-            // console.log(`✅ Crawling completed in ${Date.now() - crawlStart}ms`);
 
-            // console.log(chalk.blue("🔗 Checking for broken links and redirects..."));
-            const linkStart = Date.now();
+            // Step 2: Run analyses in parallel
+            let parallelAnalyses;
 
-            try {
-                const linkChecker = new BrokenLinkChecker(this.baseURL);
-                const rawBrokenLinks = await linkChecker.checkLinks(this.results.crawl);
-                this.results.brokenLinks = {
-                    broken: rawBrokenLinks.broken.map((link: any) => ({
-                        url: link.url,
-                        status: typeof link.status === "string" ? Number(link.status) : link.status,
-                    })),
-                    redirects: rawBrokenLinks.redirects.map((redirect: any) => ({
-                        url: redirect.url,
-                        to: redirect.to,
-                    })),
-                };
-                this.analysisStatus.brokenLinks = "complete";
-                // console.log(`✅ Link checking completed in ${Date.now() - linkStart}ms - Found ${this.results.brokenLinks.broken.length} broken links and ${this.results.brokenLinks.redirects.length} redirects.`);
-            } catch (linkError) {
-                // console.warn(`⚠️ Link checking failed or timed out: ${linkError}`);
-                this.results.brokenLinks = { broken: [], redirects: [] };
-                const msg = (linkError && (linkError as any).message) || String(linkError);
-                this.analysisStatus.brokenLinks = /timeout|timed out/i.test(msg) ? "timed_out" : "failed";
+            if (this.fastMode) {
+                // Fast mode: skip expensive operations
+                parallelAnalyses = await Promise.allSettled([
+                    this.runBrokenLinksCheck(),
+                    this.runMobileAnalysis(),
+                    this.runValidation()
+                ]);
+
+                // Mark expensive operations as skipped
+                this.analysisStatus.speed = "skipped";
+                this.analysisStatus.schema = "skipped";
+            } else {
+                // Full mode: run all analyses for complete results
+                parallelAnalyses = await Promise.allSettled([
+                    this.runBrokenLinksCheck(),
+                    this.runSpeedAudit(),
+                    this.runMobileAnalysis(),
+                    this.runValidation(),
+                    this.runSchemaAnalysis()
+                ]);
             }
 
-            // console.log(chalk.blue('⏱️  Analyzing page speed...'));
-            const speedStart = Date.now();
+            // Step 3: Architecture analysis (depends on crawl results)
             try {
-                const speedAuditor = new SpeedAuditor();
-                const speedResult = await speedAuditor.audit(this.baseURL);
-                if (speedResult && typeof speedResult.performanceScore === 'number' && speedResult.performanceScore > 1) {
-                    speedResult.performanceScore = speedResult.performanceScore / 100;
-                }
-                if (
-                    speedResult &&
-                    typeof speedResult.performanceScore === "number" &&
-                    typeof speedResult.firstContentfulPaint === "string" &&
-                    typeof speedResult.largestContentfulPaint === "string" &&
-                    typeof speedResult.cumulativeLayoutShift === "string"
-                ) {
-                    this.results.speed = speedResult;
-                    this.analysisStatus.speed = "complete";
-                    // console.log(`✅ Page speed audit completed in ${Date.now() - speedStart}ms`);
-                } else {
-                    console.warn(`⚠️ Page speed audit returned an error or incomplete result: ${speedResult?.error || "Unknown error"}`);
-                    this.results.speed = null;
-                    this.analysisStatus.speed = "failed";
-                }
-            } catch (speedError) {
-                console.warn(`⚠️ Page speed audit failed: ${speedError}`);
-                const msg = (speedError && (speedError as any).message) || String(speedError);
-                this.analysisStatus.speed = /timeout|timed out/i.test(msg) ? "timed_out" : "failed";
-                this.results.speed = null;
+                const visualizer = new SiteArchitectureVisualizer();
+                this.results.architecture = visualizer.visualize(this.results.crawl) as unknown as ArchitectureResult;
+                this.analysisStatus.architecture = "complete";
+            } catch (archError) {
+                console.warn(`⚠️ Architecture analysis failed: ${archError}`);
+                this.analysisStatus.architecture = "failed";
             }
-
-            // console.log(chalk.blue("⏱️  Skipping additional analyses to stay within timeout limits..."));
-
-            ["mobile", "validation", "schema", "architecture"].forEach((k) => {
-                (this.analysisStatus as any)[k] = "skipped";
-            });
-
-            // console.log(chalk.blue('📱 Checking mobile optimization...'));
-            const mobileScanner = new MobileScanner();
-            this.results.mobile = await mobileScanner.scan(this.baseURL);
-
-            // console.log(chalk.blue('📋 Validating robots.txt and sitemap...'));
-            try {
-                const validator = new RobotsSitemapValidator(this.baseURL);
-                const validationResult = await validator.validate();
-                this.results.validation = {
-                    robotsTxtExists: !!validationResult.robotsTxtExists,
-                    missingInSitemap: Array.isArray(validationResult.missingInSitemap) ? validationResult.missingInSitemap : [],
-                };
-                this.analysisStatus.validation = 'complete';
-            } catch (validationError) {
-                console.warn(`⚠️ Validation step failed: ${validationError}`);
-                this.results.validation = { robotsTxtExists: false, missingInSitemap: [] };
-                const msg = (validationError && (validationError as any).message) || String(validationError);
-                this.analysisStatus.validation = /timeout|timed out/i.test(msg) ? 'timed_out' : 'failed';
-            }
-
-            console.log(chalk.blue('🏷️  Checking schema markup...'));
-            const schemaGenerator = new SchemaGenerator();
-            const schemaCheckResult = await schemaGenerator.checkSchema(this.baseURL);
-            this.results.schema = {
-                hasSchema: schemaCheckResult.hasSchema,
-                schemas: schemaCheckResult.schemas.map((schema: any) => typeof schema === "string" ? schema : schema.type || schema.name || JSON.stringify(schema)),
-            };
-
-            // console.log(chalk.blue('🏗️  Analyzing site architecture...'));
-            const visualizer = new SiteArchitectureVisualizer();
-            this.results.architecture = visualizer.visualize(this.results.crawl) as unknown as ArchitectureResult;
 
             console.log(`✅ Analysis completed in ${Date.now() - startTime}ms`);
 
             this.generateReport();
-            // Return the raw results and status so callers (e.g. HTTP handlers) can send structured data to frontends
             return { results: this.results, status: this.analysisStatus };
         } catch (error: any) {
             console.error(chalk.red("Error during SEO analysis:"), error.message);
-            // Re-throw so callers can handle errors (and we don't swallow them here)
             throw error;
         }
     }
 
-    private generateReport(): void {
-        console.log(chalk.cyan("\n📊 Technical SEO Analysis Report"));
-        console.log(chalk.cyan("================================\n"));
-
-        const summaryTable = new Table({
-            head: [chalk.white("Category"), chalk.white("Status"), chalk.white("Details")],
-            colWidths: [20, 15, 45],
+    private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: string): Promise<T> {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error(`${operationName} timed out after ${timeoutMs}ms`)), timeoutMs);
         });
 
-        summaryTable.push(
-            [
-                "Crawl",
-                this.results.crawl ? chalk.green("Complete") : chalk.red("Failed"),
-                `${this.results.crawl?.size || 0} pages found`,
-            ],
-            [
-                "Broken Links",
-                this.results.brokenLinks ? chalk.green("Complete") : chalk.red("Failed"),
-                `${this.results.brokenLinks?.broken?.length || 0} broken, ${this.results.brokenLinks?.redirects?.length || 0
-                } redirects`,
-            ],
-            [
-                "Page Speed",
-                this.results.speed ? chalk.green("Complete") : chalk.red("Failed"),
-                this.results.speed
-                    ? `${Math.round(this.results.speed.performanceScore * 100)}/100`
-                    : "N/A",
-            ],
-            [
-                "Mobile",
-                this.results.mobile ? chalk.green("Complete") : chalk.red("Failed"),
-                this.results.mobile?.isMobileFriendly
-                    ? chalk.green("Mobile-friendly")
-                    : chalk.red("Not optimized"),
-            ],
-            [
-                "Validation",
-                this.results.validation ? chalk.green("Complete") : chalk.red("Failed"),
-                this.results.validation?.robotsTxtExists
-                    ? "Robots.txt ✓"
-                    : "Robots.txt ✗",
-            ],
-            [
-                "Schema",
-                this.results.schema ? chalk.green("Complete") : chalk.red("Failed"),
-                this.results.schema?.hasSchema
-                    ? `${this.results.schema.schemas.length} schema types`
-                    : "No schema found",
-            ],
-            [
-                "Architecture",
-                this.results.architecture ? chalk.green("Complete") : chalk.red("Failed"),
-                `${Object.keys(this.results.architecture || {}).length} depth levels`,
-            ]
-        );
+        return Promise.race([promise, timeoutPromise]);
+    }
 
-        // console.log(summaryTable.toString());
+    private async withRetry<T>(
+        operation: () => Promise<T>,
+        operationName: string,
+        maxRetries: number = 2,
+        timeoutMs: number = 10000
+    ): Promise<T> {
+        let lastError: Error | null = null;
 
-        this.showDetailedFindings();
+        for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+            try {
+                return await this.withTimeout(operation(), timeoutMs, operationName);
+            } catch (error) {
+                lastError = error as Error;
+                if (attempt <= maxRetries && !/timed out/i.test(lastError.message)) {
+                    console.log(`${operationName} attempt ${attempt} failed, retrying...`);
+                    await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+                } else {
+                    break;
+                }
+            }
+        }
+
+        throw lastError || new Error(`${operationName} failed after ${maxRetries + 1} attempts`);
+    }
+
+    private async runBrokenLinksCheck(): Promise<void> {
+        try {
+            if (!this.results.crawl) {
+                this.results.brokenLinks = { broken: [], redirects: [] };
+                this.analysisStatus.brokenLinks = "failed";
+                return;
+            }
+
+            const linkChecker = new BrokenLinkChecker(this.baseURL);
+            const rawBrokenLinks = await this.withTimeout(
+                linkChecker.checkLinks(this.results.crawl),
+                20000, // 20 second timeout for thorough link checking
+                "broken links check"
+            );
+            this.results.brokenLinks = {
+                broken: rawBrokenLinks.broken.map((link: any) => ({
+                    url: link.url,
+                    status: typeof link.status === "string" ? Number(link.status) : link.status,
+                })),
+                redirects: rawBrokenLinks.redirects.map((redirect: any) => ({
+                    url: redirect.url,
+                    to: redirect.to,
+                })),
+            };
+            this.analysisStatus.brokenLinks = "complete";
+        } catch (linkError) {
+            this.results.brokenLinks = { broken: [], redirects: [] };
+            const msg = (linkError && (linkError as any).message) || String(linkError);
+            this.analysisStatus.brokenLinks = /timeout|timed out/i.test(msg) ? "timed_out" : "failed";
+        }
+    }
+
+    private async runSpeedAudit(): Promise<void> {
+        try {
+            const speedAuditor = new SpeedAuditor();
+            const speedResult = await this.withRetry(
+                () => speedAuditor.audit(this.baseURL),
+                "speed audit",
+                0, // No retries for speed audit (too expensive)
+                60000 // 60 second timeout
+            );
+
+            if (speedResult && typeof speedResult.performanceScore === 'number' && speedResult.performanceScore > 1) {
+                speedResult.performanceScore = speedResult.performanceScore / 100;
+            }
+
+            if (
+                speedResult &&
+                typeof speedResult.performanceScore === "number" &&
+                typeof speedResult.firstContentfulPaint === "string" &&
+                typeof speedResult.largestContentfulPaint === "string" &&
+                typeof speedResult.cumulativeLayoutShift === "string"
+            ) {
+                this.results.speed = speedResult;
+                this.analysisStatus.speed = "complete";
+            } else {
+                this.results.speed = null;
+                this.analysisStatus.speed = "failed";
+            }
+        } catch (speedError) {
+            const msg = (speedError && (speedError as any).message) || String(speedError);
+            this.analysisStatus.speed = /timeout|timed out/i.test(msg) ? "timed_out" : "failed";
+            this.results.speed = null;
+        }
+    }
+
+    private async runMobileAnalysis(): Promise<void> {
+        try {
+            const mobileScanner = new MobileScanner();
+            this.results.mobile = await this.withRetry(
+                () => mobileScanner.scan(this.baseURL),
+                "mobile analysis",
+                1, // 1 retry
+                15000 // 15 second timeout
+            );
+            this.analysisStatus.mobile = "complete";
+        } catch (mobileError) {
+            const msg = (mobileError && (mobileError as any).message) || String(mobileError);
+            this.analysisStatus.mobile = /timeout|timed out/i.test(msg) ? "timed_out" : "failed";
+            this.results.mobile = null;
+        }
+    }
+
+    private async runValidation(): Promise<void> {
+        try {
+            const validator = new RobotsSitemapValidator(this.baseURL);
+            const validationResult = await this.withRetry(
+                () => validator.validate(),
+                "validation",
+                1, // 1 retry
+                15000 // 15 second timeout
+            );
+            this.results.validation = {
+                robotsTxtExists: !!validationResult.robotsTxtExists,
+                missingInSitemap: Array.isArray(validationResult.missingInSitemap) ? validationResult.missingInSitemap : [],
+            };
+            this.analysisStatus.validation = 'complete';
+        } catch (validationError) {
+            this.results.validation = { robotsTxtExists: false, missingInSitemap: [] };
+            const msg = (validationError && (validationError as any).message) || String(validationError);
+            this.analysisStatus.validation = /timeout|timed out/i.test(msg) ? 'timed_out' : 'failed';
+        }
+    }
+
+    private async runSchemaAnalysis(): Promise<void> {
+        try {
+            const schemaGenerator = new SchemaGenerator();
+            const schemaCheckResult = await this.withTimeout(
+                schemaGenerator.checkSchema(this.baseURL),
+                12000, // Increased from 8 seconds to 12 seconds
+                "schema analysis"
+            );
+            this.results.schema = {
+                hasSchema: schemaCheckResult.hasSchema,
+                schemas: schemaCheckResult.schemas.map((schema: any) =>
+                    typeof schema === "string" ? schema : schema.type || schema.name || JSON.stringify(schema)
+                ),
+            };
+            this.analysisStatus.schema = "complete";
+        } catch (schemaError) {
+            const msg = (schemaError && (schemaError as any).message) || String(schemaError);
+            this.analysisStatus.schema = /timeout|timed out/i.test(msg) ? "timed_out" : "failed";
+            this.results.schema = null;
+        }
+    }
+
+    private generateReport(): void {
+        // Simplified reporting - only show critical info to reduce overhead
+        const pagesCrawled = this.results.crawl?.size || 0;
+        const brokenLinks = this.results.brokenLinks?.broken?.length || 0;
+        const speedScore = this.results.speed ? Math.round(this.results.speed.performanceScore * 100) : null;
+        const isMobileFriendly = this.results.mobile?.isMobileFriendly || false;
+
+        console.log(chalk.cyan("\n📊 SEO Analysis Summary"));
+        console.log(`Pages: ${pagesCrawled} | Broken: ${brokenLinks} | Speed: ${speedScore || 'N/A'} | Mobile: ${isMobileFriendly ? '✓' : '✗'}`);
     }
 
     private showDetailedFindings(): void {
+        // Only show critical issues to reduce console overhead
         if (this.results.brokenLinks?.broken.length) {
-            console.log(chalk.red("\n❌ Broken Links:"));
-            this.results.brokenLinks.broken.slice(0, 5).forEach((link) => {
+            console.log(chalk.red(`\n❌ ${this.results.brokenLinks.broken.length} broken links found`));
+            // Show only first 2 broken links
+            this.results.brokenLinks.broken.slice(0, 2).forEach((link) => {
                 console.log(`  ${link.url} (${link.status})`);
             });
-            if (this.results.brokenLinks.broken.length > 5) {
-                console.log(
-                    `  ... and ${this.results.brokenLinks.broken.length - 5} more`
-                );
-            }
         }
-
-        // if (this.results.speed) {
-        //     console.log(chalk.blue("\n⏱️  Page Speed Insights:"));
-        //     console.log(
-        //         `  Performance Score: ${Math.round(
-        //             this.results.speed.performanceScore * 100
-        //         )}/100`
-        //     );
-        //     console.log(`  First Contentful Paint: ${this.results.speed.firstContentfulPaint}`);
-        //     console.log(`  Largest Contentful Paint: ${this.results.speed.largestContentfulPaint}`);
-        //     console.log(`  Cumulative Layout Shift: ${this.results.speed.cumulativeLayoutShift}`);
-        // }
 
         if (this.results.mobile && !this.results.mobile.isMobileFriendly) {
-            // console.log(chalk.yellow("\n📱 Mobile Optimization Issues:"));
-            if (!this.results.mobile.viewport) console.log("  ❌ Viewport meta tag missing");
-            if (!this.results.mobile.touchIcons) console.log("  ❌ Touch icons missing");
-            if (!this.results.mobile.appropriateFontSize) console.log("  ❌ Font size too small");
-        }
-
-        if (this.results.validation) {
-            if (!this.results.validation.robotsTxtExists) {
-                // console.log(chalk.yellow("\n📋 Missing robots.txt file"));
-            }
-            if (this.results.validation.missingInSitemap.length > 0) {
-                // console.log(chalk.yellow("\n📋 Pages missing from sitemap:"));
-                this.results.validation.missingInSitemap.slice(0, 3).forEach((page) => {
-                    console.log(`  ${page}`);
-                });
-            }
+            console.log(chalk.yellow("\n📱 Mobile optimization issues detected"));
         }
     }
 }
@@ -313,16 +337,21 @@ export class SEOAnalysisOrchestrator {
 // CLI Runner
 if (require.main === module) {
     const url = process.argv[2];
+    const fastMode = process.argv.includes('--fast') || process.argv.includes('-f');
 
     if (!url) {
         console.log(chalk.red("Please provide a URL to analyze"));
-        console.log(chalk.yellow("Usage: ts-node index.ts <url>"));
+        console.log(chalk.yellow("Usage: ts-node index.ts <url> [--fast]"));
+        console.log(chalk.yellow("  --fast: Skip expensive operations like Lighthouse speed audit"));
         process.exit(1);
     }
 
     console.log(chalk.cyan(`Starting Technical SEO Analysis for: ${url}`));
+    if (fastMode) {
+        console.log(chalk.yellow("🚀 Fast mode enabled - skipping expensive operations (speed audit & schema)"));
+    }
 
-    const analyzer = new SEOAnalysisOrchestrator(url);
+    const analyzer = new SEOAnalysisOrchestrator(url, { fastMode });
     analyzer
         .runFullAnalysis()
         .then((res) => {

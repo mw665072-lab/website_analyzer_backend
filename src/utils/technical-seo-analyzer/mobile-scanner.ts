@@ -12,9 +12,13 @@ class MobileScanner {
     async scan(url: string): Promise<MobileScanResult | null> {
         try {
             const response = await axios.get<string>(url, {
-                timeout: 8000,
-                headers: { "User-Agent": "Mozilla/5.0 (compatible; AnalyzerBot/1.0)" },
+                timeout: 12000, // Increased from 8000 to 12000ms
+                headers: {
+                    "User-Agent": "Mozilla/5.0 (compatible; AnalyzerBot/1.0)",
+                    "Accept": "text/html,application/xhtml+xml"
+                },
                 responseType: "text",
+                maxRedirects: 3, // Limit redirects
             });
             const $ = cheerio.load(response.data || "");
             const viewport = ($('meta[name="viewport"]').attr("content") || "").toLowerCase();

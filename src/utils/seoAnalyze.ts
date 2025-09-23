@@ -1,13 +1,15 @@
 import { SEOAnalysisOrchestrator } from './technical-seo-analyzer/index';
 
-export async function seoanalyzeUrl(url: string): Promise<any> {
+export async function seoanalyzeUrl(url: string, options?: { fastMode?: boolean }): Promise<any> {
+    // Run full analysis by default, only use fast mode when explicitly requested
+    const fastMode = options?.fastMode === true; // Default to false unless explicitly enabled
 
-    const seoAnalyzer = new SEOAnalysisOrchestrator(url);
+    const seoAnalyzer = new SEOAnalysisOrchestrator(url, { fastMode });
     const seoPromise = seoAnalyzer.runFullAnalysis();
     const seoSettledResult: any = await Promise.allSettled([seoPromise]);
     const seoSettled = seoSettledResult[0];
     // Log a concise start/finish message
-    console.log(`SEO analysis settled for url=${url} status=${seoSettled.status}`);
+    console.log(`SEO analysis settled for url=${url} status=${seoSettled.status} fastMode=${fastMode}`);
 
     const result: any = {};
 
@@ -28,7 +30,7 @@ export async function seoanalyzeUrl(url: string): Promise<any> {
         };
     }
 
-    console.log('Analysis completed, returning results', result);
+    console.log('Analysis completed, returning results');
     return result;
 }
 

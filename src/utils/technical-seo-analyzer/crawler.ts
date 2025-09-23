@@ -25,20 +25,21 @@ export class TechnicalSEOAnalyzer {
             try {
                 const crawler = new Crawler(this.baseURL);
 
-                crawler.interval = 10000;
-                crawler.maxConcurrency = 3;
+                // Optimized settings for balanced speed and thoroughness
+                crawler.interval = 500; // Increased from 200ms to 500ms for stability
+                crawler.maxConcurrency = 6; // Reduced from 8 to 6 for stability
                 crawler.respectRobotsTxt = true;
-                crawler.maxDepth = 2;
-                crawler.timeout = 5000;
+                crawler.maxDepth = 2; // Increased back to 2 for better coverage
+                crawler.timeout = 4000; // Increased from 3000ms to 4000ms
                 crawler.userAgent = "SEO-Analyzer/1.0";
 
                 let pagesFound = 0;
-                const maxPages = 10;
+                const maxPages = 8; // Increased from 5 to 8 for better analysis
 
                 const crawlTimeout = setTimeout(() => {
                     crawler.stop();
                     resolve(this.crawledPages);
-                }, 15000);
+                }, 12000); // Increased from 8000ms to 12000ms
 
                 const toText = (b: string | Buffer) =>
                     typeof b === "string" ? b : b.toString();

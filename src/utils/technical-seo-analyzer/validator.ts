@@ -18,7 +18,14 @@ class RobotsSitemapValidator {
 
     private async fetchSitemap(url: string): Promise<string | null> {
         try {
-            const res = await axios.get<string>(url, { validateStatus: null });
+            const res = await axios.get<string>(url, {
+                validateStatus: null,
+                timeout: 10000, // 10 second timeout for each request
+                maxRedirects: 3,
+                headers: {
+                    "User-Agent": "Mozilla/5.0 (compatible; AnalyzerBot/1.0)"
+                }
+            });
             return res.status === 200 && typeof res.data === "string" ? res.data : null;
         } catch {
             return null;
